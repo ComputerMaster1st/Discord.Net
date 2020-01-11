@@ -18,6 +18,7 @@ namespace Discord.WebSocket
     [DebuggerDisplay(@"{DebuggerDisplay,nq}")]
     public class SocketGuildUser : SocketUser, IGuildUser
     {
+        private long? _premiumSinceTicks;
         private long? _joinedAtTicks;
         private ImmutableArray<ulong> _roleIds;
 
@@ -54,6 +55,8 @@ namespace Discord.WebSocket
         /// <inheritdoc />
         public bool IsMuted => VoiceState?.IsMuted ?? false;
         /// <inheritdoc />
+        public bool IsStreaming => VoiceState?.IsStreaming ?? false;
+        /// <inheritdoc />
         public DateTimeOffset? JoinedAt => DateTimeUtils.FromTicks(_joinedAtTicks);
         /// <summary>
         ///     Returns a collection of roles that the user possesses.
@@ -75,6 +78,8 @@ namespace Discord.WebSocket
         /// </returns>
         public SocketVoiceState? VoiceState => Guild.GetVoiceState(Id);
         public AudioInStream AudioStream => Guild.GetAudioStream(Id);
+        /// <inheritdoc />
+        public DateTimeOffset? PremiumSince => DateTimeUtils.FromTicks(_premiumSinceTicks);
 
         /// <summary>
         ///     Returns the position of the user within the role hierarchy.
@@ -135,6 +140,8 @@ namespace Discord.WebSocket
                 Nickname = model.Nick.Value;
             if (model.Roles.IsSpecified)
                 UpdateRoles(model.Roles.Value);
+            if (model.PremiumSince.IsSpecified)
+                _premiumSinceTicks = model.PremiumSince.Value?.UtcTicks;
         }
         internal void Update(ClientState state, PresenceModel model, bool updatePresence)
         {

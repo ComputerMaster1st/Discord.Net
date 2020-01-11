@@ -3,6 +3,7 @@ using System;
 using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.Linq;
+using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using Model = Discord.API.Message;
 
@@ -10,6 +11,16 @@ namespace Discord.Rest
 {
     internal static class MessageHelper
     {
+        /// <summary>
+        /// Regex used to check if some text is formatted as inline code.
+        /// </summary>
+        private static readonly Regex InlineCodeRegex = new Regex(@"[^\\]?(`).+?[^\\](`)", RegexOptions.Compiled | RegexOptions.Multiline | RegexOptions.Singleline);
+
+        /// <summary>
+        /// Regex used to check if some text is formatted as a code block.
+        /// </summary>
+        private static readonly Regex BlockCodeRegex = new Regex(@"[^\\]?(```).+?[^\\](```)", RegexOptions.Compiled | RegexOptions.Multiline | RegexOptions.Singleline);
+
         /// <exception cref="InvalidOperationException">Only the author of a message may modify the message.</exception>
         /// <exception cref="ArgumentOutOfRangeException">Message content is too long, length must be less or equal to <see cref="DiscordConfig.MaxMessageSize"/>.</exception>
         public static async Task<Model> ModifyAsync(IMessage msg, BaseDiscordClient client, Action<MessageProperties> func,
@@ -20,6 +31,7 @@ namespace Discord.Rest
 
             var args = new MessageProperties();
             func(args);
+
             var apiArgs = new API.Rest.ModifyMessageParams
             {
                 Content = args.Content,
@@ -35,14 +47,23 @@ namespace Discord.Rest
             await client.ApiClient.DeleteMessageAsync(channelId, msgId, options).ConfigureAwait(false);
         }
 
+        public static async Task SuppressEmbedsAsync(IMessage msg, BaseDiscordClient client, bool suppress, RequestOptions options)
+        {
+            var apiArgs = new API.Rest.SuppressEmbedParams
+            {
+                Suppressed = suppress
+            };
+            await client.ApiClient.SuppressEmbedAsync(msg.Channel.Id, msg.Id, apiArgs, options).ConfigureAwait(false);
+        }
+
         public static async Task AddReactionAsync(IMessage msg, IEmote emote, BaseDiscordClient client, RequestOptions options)
         {
             await client.ApiClient.AddReactionAsync(msg.Channel.Id, msg.Id, emote is Emote e ? $"{e.Name}:{e.Id}" : emote.Name, options).ConfigureAwait(false);
         }
 
-        public static async Task RemoveReactionAsync(IMessage msg, IUser user, IEmote emote, BaseDiscordClient client, RequestOptions options)
+        public static async Task RemoveReactionAsync(IMessage msg, ulong userId, IEmote emote, BaseDiscordClient client, RequestOptions options)
         {
-            await client.ApiClient.RemoveReactionAsync(msg.Channel.Id, msg.Id, user.Id, emote is Emote e ? $"{e.Name}:{e.Id}" : emote.Name, options).ConfigureAwait(false);
+            await client.ApiClient.RemoveReactionAsync(msg.Channel.Id, msg.Id, userId, emote is Emote e ? $"{e.Name}:{e.Id}" : emote.Name, options).ConfigureAwait(false);
         }
 
         public static async Task RemoveAllReactionsAsync(IMessage msg, BaseDiscordClient client, RequestOptions options)
@@ -98,14 +119,53 @@ namespace Discord.Rest
         public static ImmutableArray<ITag> ParseTags(string text, IMessageChannel channel, IGuild guild, IReadOnlyCollection<IUser> userMentions)
         {
             var tags = ImmutableArray.CreateBuilder<ITag>();
-            
             int index = 0;
+            var codeIndex = 0;
+
+            // checks if the tag being parsed is wrapped in code blocks
+            bool CheckWrappedCode()
+            {
+                // util to check if the index of a tag is within the bounds of the codeblock
+                bool EnclosedInBlock(Match m)
+                    => m.Groups[1].Index < index && index < m.Groups[2].Index;
+
+                // loop through all code blocks that are before the start of the tag
+                while (codeIndex < index)
+                {
+                    var blockMatch = BlockCodeRegex.Match(text, codeIndex);
+                    if (blockMatch.Success)
+                    {
+                        if (EnclosedInBlock(blockMatch))
+                            return true;
+                        // continue if the end of the current code was before the start of the tag
+                        codeIndex += blockMatch.Groups[2].Index + blockMatch.Groups[2].Length;
+                        if (codeIndex < index)
+                            continue;
+                        return false;
+                    }
+                    var inlineMatch = InlineCodeRegex.Match(text, codeIndex);
+                    if (inlineMatch.Success)
+                    {
+                        if (EnclosedInBlock(inlineMatch))
+                            return true;
+                        // continue if the end of the current code was before the start of the tag
+                        codeIndex += inlineMatch.Groups[2].Index + inlineMatch.Groups[2].Length;
+                        if (codeIndex < index)
+                            continue;
+                        return false;
+                    }
+                    return false;
+                }
+                return false;
+            }
+
             while (true)
             {
                 index = text.IndexOf('<', index);
                 if (index == -1) break;
                 int endIndex = text.IndexOf('>', index + 1);
                 if (endIndex == -1) break;
+                if (CheckWrappedCode()) break;
                 string content = text.Substring(index, endIndex - index + 1);
 
                 if (MentionUtils.TryParseUser(content, out ulong id))
@@ -148,26 +208,28 @@ namespace Discord.Rest
             }
 
             index = 0;
+            codeIndex = 0;
             while (true)
             {
                 index = text.IndexOf("@everyone", index);
                 if (index == -1) break;
-
+                if (CheckWrappedCode()) break;
                 var tagIndex = FindIndex(tags, index);
                 if (tagIndex.HasValue)
-                    tags.Insert(tagIndex.Value, new Tag<object>(TagType.EveryoneMention, index, "@everyone".Length, 0, null));
+                    tags.Insert(tagIndex.Value, new Tag<IRole>(TagType.EveryoneMention, index, "@everyone".Length, 0, guild?.EveryoneRole));
                 index++;
             }
 
             index = 0;
+            codeIndex = 0;
             while (true)
             {
                 index = text.IndexOf("@here", index);
                 if (index == -1) break;
-
+                if (CheckWrappedCode()) break;
                 var tagIndex = FindIndex(tags, index);
                 if (tagIndex.HasValue)
-                    tags.Insert(tagIndex.Value, new Tag<object>(TagType.HereMention, index, "@here".Length, 0, null));
+                    tags.Insert(tagIndex.Value, new Tag<IRole>(TagType.HereMention, index, "@here".Length, 0, guild?.EveryoneRole));
                 index++;
             }
 

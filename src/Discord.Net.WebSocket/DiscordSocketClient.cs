@@ -43,9 +43,12 @@ namespace Discord.WebSocket
         private DateTimeOffset? _statusSince;
         private RestApplication _applicationInfo;
         private bool _isDisposed;
+        private bool _guildSubscriptions;
 
-        /// <summary> Provides access to a REST-only client with a shared state from this client. </summary>
-        public DiscordSocketRestClient Rest { get; }
+        /// <summary>
+        ///     Provides access to a REST-only client with a shared state from this client.
+        /// </summary>
+        public override DiscordSocketRestClient Rest { get; }
         /// <summary> Gets the shard of of this client. </summary>
         public int ShardId { get; }
         /// <summary> Gets the current connection state of this client. </summary>
@@ -66,6 +69,7 @@ namespace Discord.WebSocket
         internal WebSocketProvider WebSocketProvider { get; private set; }
         internal bool AlwaysDownloadUsers { get; private set; }
         internal int? HandlerTimeout { get; private set; }
+        internal bool? ExclusiveBulkDelete { get; private set; }
 
         internal new DiscordSocketApiClient ApiClient => base.ApiClient as DiscordSocketApiClient;
         /// <inheritdoc />
@@ -128,9 +132,11 @@ namespace Discord.WebSocket
             WebSocketProvider = config.WebSocketProvider;
             AlwaysDownloadUsers = config.AlwaysDownloadUsers;
             HandlerTimeout = config.HandlerTimeout;
+            ExclusiveBulkDelete = config.ExclusiveBulkDelete;
             State = new ClientState(0, 0);
             Rest = new DiscordSocketRestClient(config, ApiClient);
             _heartbeatTimes = new ConcurrentQueue<long>();
+            _guildSubscriptions = config.GuildSubscriptions;
 
             _stateLock = new SemaphoreSlim(1, 1);
             _gatewayLogger = LogManager.CreateLogger(ShardId == 0 && TotalShards == 1 ? "Gateway" : $"Shard #{ShardId}");
@@ -172,7 +178,8 @@ namespace Discord.WebSocket
             _largeGuilds = new ConcurrentQueue<ulong>();
         }
         private static API.DiscordSocketApiClient CreateApiClient(DiscordSocketConfig config)
-            => new API.DiscordSocketApiClient(config.RestClientProvider, config.WebSocketProvider, DiscordRestConfig.UserAgent, config.GatewayHost);
+            => new API.DiscordSocketApiClient(config.RestClientProvider, config.WebSocketProvider, DiscordRestConfig.UserAgent, config.GatewayHost,
+                rateLimitPrecision: config.RateLimitPrecision);
         /// <inheritdoc />
         internal override void Dispose(bool disposing)
         {
@@ -200,6 +207,7 @@ namespace Discord.WebSocket
             }
             else
                 _voiceRegions = _parentClient._voiceRegions;
+            await Rest.OnLoginAsync(tokenType, token);
         }
         /// <inheritdoc />
         internal override async Task OnLogoutAsync()
@@ -207,6 +215,7 @@ namespace Discord.WebSocket
             await StopAsync().ConfigureAwait(false);
             _applicationInfo = null;
             _voiceRegions = ImmutableDictionary.Create<string, RestVoiceRegion>();
+            await Rest.OnLogoutAsync();
         }
 
         /// <inheritdoc />
@@ -233,7 +242,7 @@ namespace Discord.WebSocket
                 else
                 {
                     await _gatewayLogger.DebugAsync("Identifying").ConfigureAwait(false);
-                    await ApiClient.SendIdentifyAsync(shardID: ShardId, totalShards: TotalShards).ConfigureAwait(false);
+                    await ApiClient.SendIdentifyAsync(shardID: ShardId, totalShards: TotalShards, guildSubscriptions: _guildSubscriptions).ConfigureAwait(false);
                 }
 
                 //Wait for READY
@@ -321,7 +330,7 @@ namespace Discord.WebSocket
             {
                 var user = SocketGlobalUser.Create(this, state, model);
                 user.GlobalUser.AddRef();
-                user.Presence = new SocketPresence(UserStatus.Online, null);
+                user.Presence = new SocketPresence(UserStatus.Online, null, null);
                 return user;
             });
         }
@@ -429,7 +438,7 @@ namespace Discord.WebSocket
                 return;
             var status = Status;
             var statusSince = _statusSince;
-            CurrentUser.Presence = new SocketPresence(status, Activity);
+            CurrentUser.Presence = new SocketPresence(status, Activity, null);
 
             var gameModel = new GameModel();
             // Discord only accepts rich presence over RPC, don't even bother building a payload
@@ -1293,7 +1302,16 @@ namespace Discord.WebSocket
                                         var cachedMsg = channel.GetCachedMessage(data.MessageId) as SocketUserMessage;
                                         bool isCached = cachedMsg != null;
                                         var user = await channel.GetUserAsync(data.UserId, CacheMode.CacheOnly).ConfigureAwait(false);
-                                        var reaction = SocketReaction.Create(data, channel, cachedMsg, Optional.Create(user));
+
+                                        var optionalMsg = !isCached
+                                            ? Optional.Create<SocketUserMessage>()
+                                            : Optional.Create(cachedMsg);
+
+                                        var optionalUser = user is null
+                                            ? Optional.Create<IUser>()
+                                            : Optional.Create(user);
+
+                                        var reaction = SocketReaction.Create(data, channel, optionalMsg, optionalUser);
                                         var cacheable = new Cacheable<IUserMessage, ulong>(cachedMsg, data.MessageId, isCached, async () => await channel.GetMessageAsync(data.MessageId).ConfigureAwait(false) as IUserMessage);
 
                                         cachedMsg?.AddReaction(reaction);
@@ -1317,7 +1335,16 @@ namespace Discord.WebSocket
                                         var cachedMsg = channel.GetCachedMessage(data.MessageId) as SocketUserMessage;
                                         bool isCached = cachedMsg != null;
                                         var user = await channel.GetUserAsync(data.UserId, CacheMode.CacheOnly).ConfigureAwait(false);
-                                        var reaction = SocketReaction.Create(data, channel, cachedMsg, Optional.Create(user));
+
+                                        var optionalMsg = !isCached
+                                            ? Optional.Create<SocketUserMessage>()
+                                            : Optional.Create(cachedMsg);
+
+                                        var optionalUser = user is null
+                                            ? Optional.Create<IUser>()
+                                            : Optional.Create(user);
+
+                                        var reaction = SocketReaction.Create(data, channel, optionalMsg, optionalUser);
                                         var cacheable = new Cacheable<IUserMessage, ulong>(cachedMsg, data.MessageId, isCached, async () => await channel.GetMessageAsync(data.MessageId).ConfigureAwait(false) as IUserMessage);
 
                                         cachedMsg?.RemoveReaction(reaction);
@@ -1357,6 +1384,14 @@ namespace Discord.WebSocket
                                 {
                                     await _gatewayLogger.DebugAsync("Received Dispatch (MESSAGE_DELETE_BULK)").ConfigureAwait(false);
 
+                                    if (!ExclusiveBulkDelete.HasValue)
+                                    {
+                                        await _gatewayLogger.WarningAsync("A bulk delete event has been received, but the event handling behavior has not been set. " +
+                                            "To suppress this message, set the ExclusiveBulkDelete configuration property. " +
+                                            "This message will appear only once.");
+                                        ExclusiveBulkDelete = false;
+                                    }
+
                                     var data = (payload as JToken).ToObject<MessageDeleteBulkEvent>(_serializer);
                                     if (State.GetChannel(data.ChannelId) is ISocketMessageChannel channel)
                                     {
@@ -1367,13 +1402,19 @@ namespace Discord.WebSocket
                                             return;
                                         }
 
+                                        var cacheableList = new List<Cacheable<IMessage, ulong>>(data.Ids.Length);
                                         foreach (ulong id in data.Ids)
                                         {
                                             var msg = SocketChannelHelper.RemoveMessage(channel, this, id);
                                             bool isCached = msg != null;
                                             var cacheable = new Cacheable<IMessage, ulong>(msg, id, isCached, async () => await channel.GetMessageAsync(id).ConfigureAwait(false));
-                                            await TimedInvokeAsync(_messageDeletedEvent, nameof(MessageDeleted), cacheable, channel).ConfigureAwait(false);
+                                            cacheableList.Add(cacheable);
+
+                                            if (!ExclusiveBulkDelete ?? false) // this shouldn't happen, but we'll play it safe anyways
+                                                await TimedInvokeAsync(_messageDeletedEvent, nameof(MessageDeleted), cacheable, channel).ConfigureAwait(false);
                                         }
+
+                                        await TimedInvokeAsync(_messagesBulkDeletedEvent, nameof(MessagesBulkDeleted), cacheableList, channel).ConfigureAwait(false);
                                     }
                                     else
                                     {
@@ -1841,8 +1882,8 @@ namespace Discord.WebSocket
                 if (await Task.WhenAny(timeoutTask, handlersTask).ConfigureAwait(false) == timeoutTask)
                 {
                     await _gatewayLogger.WarningAsync($"A {name} handler is blocking the gateway task.").ConfigureAwait(false);
-                    await handlersTask.ConfigureAwait(false); //Ensure the handler completes
                 }
+                await handlersTask.ConfigureAwait(false); //Ensure the handler completes
             }
             catch (Exception ex)
             {

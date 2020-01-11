@@ -1,5 +1,59 @@
 # Changelog
 
+## [2.1.1] - 2019-06-08
+### Fixed
+- #994: Remainder parameters now ignore character escaping, as there is no reason to escape characters here (2e95c49)
+- #1316: `Emote.Equals` now pays no respect to the Name property, since Discord's API does not care about an emote's name (abf3e90)
+- #1317: `Emote.GetHashCode` now pays no respect to the Name property, see above (1b54883)
+- #1323: Optionals will no longer claim to be specified when a reaction message was not cached (1cc5d73)
+- Log messages sourcing from REST events will no longer be raised twice (c78a679)
+- News embeds will be processed as `EmbedType.Unknown`, rather than throwing an error and dropping the message (d287ed1)
+
+### Changed
+- #1311: Members may now be disconnected from voice channels by passing `null` as `GuildUserProperties.Channel` (fc48c66)
+- #1313: `IMessage.Tags` now includes the EveryoneRole on @everyone and @here mentions (1f55f01)
+- #1320: The maximum value for setting slow-mode has been updated to 6 hours, per the new API limit (4433ca7)
+
+### Misc
+- This library's compatibility with Semantic Versioning has been clarified. Please see the README (4d7de17)
+- The depency on System.Interactive.Async has been bumped to `3.2.0` (3e65e03)
+
+## [2.1.0] - 2019-05-18
+### Added
+- #1236: Bulk deletes (for messages) may now be accessed via the `MessagesBulkDeleted` event (dec353e)
+- #1240: OAuth applications utilizing the `guilds.join` scope may now add users to guilds through any client (1356ea9)
+- #1255: Message and attachment spoilers may now be set or detected (f3b20b2)
+- #1260: DiscordWebhookClient may be created from a Webhook URL (f2113c7)
+- #1261: A `GetCategoryChannel` helper may now be used to retrieve category channels directly from socket guilds (e03c527)
+- #1263: "user joined the guild" messages are now supported (00d3f5a)
+- #1271: AuthorID may now be retrieved from message delete audit log entries (1ae4220)
+- #1293: News Channels are now supported 📰 (9084c42)
+- `ExclusiveBulkDelete` configuration setting can be used to control bulk delete event behavior (03e6401)
+
+### Removed
+- #1294: The `IGuildUser` overload of `EmbedBuilder.WithAuthor` no longer exists (b52b54d)
+
+### Fixed
+- #1256: Fetching audit logs no longer raises null reference exceptions when a webhook has been deleted (049b014)
+- #1268: Null reference exceptions on `MESSAGE_CREATE` concerning partial member objects no longer occur (377622b)
+- #1278: The token validator now internally pads tokens to the proper length (48b327b)
+- #1292: Messages now properly initialize empty collections (b2ebc03)
+- The `DiscordSocketRestClient` is now properly initialized (a44c13a)
+- Exceptions in event handlers are now always logged (f6e3200)
+
+### Changed
+- #1305: Token validation will fail when tokens contain whitespace (bb61efa)
+
+### Misc
+- #1241: Added documentation samples for Webhooks (655a006)
+- #1243: Happy new year 🎉 (0275f7d)
+- #1257: Improved clarity in comments in the command samples (2473619)
+- #1276: Documentation uses a relative path for the logo asset (b80f0e8)
+- #1303: EmbedBuilder documentation now builds in the correct spot (51618e6)
+- #1304: Updated documentation (4309550)
+- CI for this project is now powered by Azure DevOps (this is not a sponsored message 🚀) (9b2bc18)
+- IDisposableAnalyzers should now be a development dependency (8003ac8)
+
 ## [2.0.1] - 2019-01-04
 ### Fixed
 - #1226: Only escape the closing quotation mark of non-remainder strings (65b8c09)

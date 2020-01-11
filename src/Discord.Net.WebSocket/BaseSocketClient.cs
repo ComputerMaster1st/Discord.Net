@@ -36,6 +36,11 @@ namespace Discord.WebSocket
         /// </returns>
         public abstract IActivity Activity { get; protected set; }
 
+        /// <summary>
+        ///     Provides access to a REST-only client with a shared state from this client.
+        /// </summary>
+        public abstract DiscordSocketRestClient Rest { get; }
+
         internal new DiscordSocketApiClient ApiClient => base.ApiClient as DiscordSocketApiClient;
 
         /// <summary>
@@ -75,7 +80,9 @@ namespace Discord.WebSocket
         internal BaseSocketClient(DiscordSocketConfig config, DiscordRestApiClient client)
             : base(config, client) => BaseConfig = config;
         private static DiscordSocketApiClient CreateApiClient(DiscordSocketConfig config)
-            => new DiscordSocketApiClient(config.RestClientProvider, config.WebSocketProvider, DiscordRestConfig.UserAgent);
+            => new DiscordSocketApiClient(config.RestClientProvider, config.WebSocketProvider, DiscordRestConfig.UserAgent,
+                rateLimitPrecision: config.RateLimitPrecision,
+				useSystemClock: config.UseSystemClock);
 
         /// <summary>
         ///     Gets a Discord application information for the logged-in user.

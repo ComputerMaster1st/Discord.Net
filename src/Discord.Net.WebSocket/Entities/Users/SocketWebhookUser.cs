@@ -29,8 +29,8 @@ namespace Discord.WebSocket
 
         /// <inheritdoc />
         public override bool IsWebhook => true;
-
-        internal override SocketPresence Presence { get { return new SocketPresence(UserStatus.Offline, null); } set { } }
+        /// <inheritdoc />
+        internal override SocketPresence Presence { get { return new SocketPresence(UserStatus.Offline, null, null); } set { } }
         internal override SocketGlobalUser GlobalUser => 
             throw new NotSupportedException();
 
@@ -62,6 +62,8 @@ namespace Discord.WebSocket
         DateTimeOffset? IGuildUser.JoinedAt => null;
         /// <inheritdoc />
         string IGuildUser.Nickname => null;
+        /// <inheritdoc />
+        DateTimeOffset? IGuildUser.PremiumSince => null;
         /// <inheritdoc />
         GuildPermissions IGuildUser.GuildPermissions => GuildPermissions.Webhook;
 
@@ -112,5 +114,7 @@ namespace Discord.WebSocket
         IVoiceChannel IVoiceState.VoiceChannel => null;
         /// <inheritdoc />
         string IVoiceState.VoiceSessionId => null;
+        /// <inheritdoc />
+        bool IVoiceState.IsStreaming => false;
     }
 }

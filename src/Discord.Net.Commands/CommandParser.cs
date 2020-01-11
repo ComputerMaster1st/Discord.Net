@@ -53,6 +53,13 @@ namespace Discord.Commands
                 else
                     c = '\0';
 
+                //If we're processing an remainder parameter, ignore all other logic
+                if (curParam != null && curParam.IsRemainder && curPos != endPos)
+                {
+                    argBuilder.Append(c);
+                    continue;
+                }
+
                 //If this character is escaped, skip it
                 if (isEscaping)
                 {
@@ -79,13 +86,6 @@ namespace Discord.Commands
                     continue;
                 }
 
-                //If we're processing an remainder parameter, ignore all other logic
-                if (curParam != null && curParam.IsRemainder && curPos != endPos)
-                {
-                    argBuilder.Append(c);
-                    continue;
-                }
-
                 //If we're not currently processing one, are we starting the next argument yet?
                 if (curPart == ParserPart.None)
                 {
@@ -103,7 +103,7 @@ namespace Discord.Commands
                             argBuilder.Append(c);
                             continue;
                         }
-                        
+
                         if (IsOpenQuote(aliasMap, c))
                         {
                             curPart = ParserPart.QuotedParameter;
@@ -136,7 +136,7 @@ namespace Discord.Commands
                     else
                         argBuilder.Append(c);
                 }
-                                
+
                 if (argString != null)
                 {
                     if (curParam == null)
@@ -149,7 +149,7 @@ namespace Discord.Commands
 
                     var typeReaderResult = await curParam.ParseAsync(context, argString, services).ConfigureAwait(false);
                     if (!typeReaderResult.IsSuccess && typeReaderResult.Error != CommandError.MultipleMatches)
-                        return ParseResult.FromError(typeReaderResult);
+                        return ParseResult.FromError(typeReaderResult, curParam);
 
                     if (curParam.IsMultiple)
                     {
@@ -172,7 +172,7 @@ namespace Discord.Commands
             {
                 var typeReaderResult = await curParam.ParseAsync(context, argBuilder.ToString(), services).ConfigureAwait(false);
                 if (!typeReaderResult.IsSuccess)
-                    return ParseResult.FromError(typeReaderResult);
+                    return ParseResult.FromError(typeReaderResult, curParam);
                 argList.Add(typeReaderResult);
             }
 
@@ -180,7 +180,7 @@ namespace Discord.Commands
                 return ParseResult.FromError(CommandError.ParseFailed, "Input text may not end on an incomplete escape.");
             if (curPart == ParserPart.QuotedParameter)
                 return ParseResult.FromError(CommandError.ParseFailed, "A quoted parameter is incomplete.");
-            
+
             //Add missing optionals
             for (int i = argList.Count; i < command.Parameters.Count; i++)
             {
@@ -191,7 +191,7 @@ namespace Discord.Commands
                     return ParseResult.FromError(CommandError.BadArgCount, "The input text has too few parameters.");
                 argList.Add(TypeReaderResult.FromSuccess(param.DefaultValue));
             }
-            
+
             return ParseResult.FromSuccess(argList.ToImmutable(), paramList.ToImmutable());
         }
     }

@@ -15,8 +15,7 @@ namespace Discord.WebSocket
     [DebuggerDisplay(@"{DebuggerDisplay,nq}")]
     public class SocketUserMessage : SocketMessage, IUserMessage
     {
-        private readonly List<SocketReaction> _reactions = new List<SocketReaction>();
-        private bool _isMentioningEveryone, _isTTS, _isPinned;
+        private bool _isMentioningEveryone, _isTTS, _isPinned, _isSuppressed;
         private long? _editedTimestampTicks;
         private ImmutableArray<Attachment> _attachments = ImmutableArray.Create<Attachment>();
         private ImmutableArray<Embed> _embeds = ImmutableArray.Create<Embed>();
@@ -26,6 +25,8 @@ namespace Discord.WebSocket
         public override bool IsTTS => _isTTS;
         /// <inheritdoc />
         public override bool IsPinned => _isPinned;
+        /// <inheritdoc />
+        public override bool IsSuppressed => _isSuppressed;
         /// <inheritdoc />
         public override DateTimeOffset? EditedTimestamp => DateTimeUtils.FromTicks(_editedTimestampTicks);
         /// <inheritdoc />
@@ -40,8 +41,6 @@ namespace Discord.WebSocket
         public override IReadOnlyCollection<SocketRole> MentionedRoles => MessageHelper.FilterTagsByValue<SocketRole>(TagType.RoleMention, _tags);
         /// <inheritdoc />
         public override IReadOnlyCollection<SocketUser> MentionedUsers => MessageHelper.FilterTagsByValue<SocketUser>(TagType.UserMention, _tags);
-        /// <inheritdoc />
-        public IReadOnlyDictionary<IEmote, ReactionMetadata> Reactions => _reactions.GroupBy(r => r.Emote).ToDictionary(x => x.Key, x => new ReactionMetadata { ReactionCount = x.Count(), IsMe = x.Any(y => y.UserId == Discord.CurrentUser.Id) });
 
         internal SocketUserMessage(DiscordSocketClient discord, ulong id, ISocketMessageChannel channel, SocketUser author, MessageSource source)
             : base(discord, id, channel, author, source)
@@ -66,6 +65,10 @@ namespace Discord.WebSocket
                 _editedTimestampTicks = model.EditedTimestamp.Value?.UtcTicks;
             if (model.MentionEveryone.IsSpecified)
                 _isMentioningEveryone = model.MentionEveryone.Value;
+            if (model.Flags.IsSpecified)
+            {
+                _isSuppressed = model.Flags.Value.HasFlag(API.MessageFlags.Suppressed);
+            }
 
             if (model.Attachments.IsSpecified)
             {
@@ -120,20 +123,7 @@ namespace Discord.WebSocket
                 model.Content = text;
             }
         }
-        internal void AddReaction(SocketReaction reaction)
-        {
-            _reactions.Add(reaction);
-        }
-        internal void RemoveReaction(SocketReaction reaction)
-        {
-            if (_reactions.Contains(reaction))
-                _reactions.Remove(reaction);
-        }
-        internal void ClearReactions()
-        {
-            _reactions.Clear();
-        }
-
+        
         /// <inheritdoc />
         /// <exception cref="InvalidOperationException">Only the author of a message may modify the message.</exception>
         /// <exception cref="ArgumentOutOfRangeException">Message content is too long, length must be less or equal to <see cref="DiscordConfig.MaxMessageSize"/>.</exception>
@@ -141,24 +131,14 @@ namespace Discord.WebSocket
             => MessageHelper.ModifyAsync(this, Discord, func, options);
 
         /// <inheritdoc />
-        public Task AddReactionAsync(IEmote emote, RequestOptions options = null)
-            => MessageHelper.AddReactionAsync(this, emote, Discord, options);
-        /// <inheritdoc />
-        public Task RemoveReactionAsync(IEmote emote, IUser user, RequestOptions options = null)
-            => MessageHelper.RemoveReactionAsync(this, user, emote, Discord, options);
-        /// <inheritdoc />
-        public Task RemoveAllReactionsAsync(RequestOptions options = null)
-            => MessageHelper.RemoveAllReactionsAsync(this, Discord, options);
-        /// <inheritdoc />
-        public IAsyncEnumerable<IReadOnlyCollection<IUser>> GetReactionUsersAsync(IEmote emote, int limit, RequestOptions options = null)
-            => MessageHelper.GetReactionUsersAsync(this, emote, limit, Discord, options);
-
-        /// <inheritdoc />
         public Task PinAsync(RequestOptions options = null)
             => MessageHelper.PinAsync(this, Discord, options);
         /// <inheritdoc />
         public Task UnpinAsync(RequestOptions options = null)
             => MessageHelper.UnpinAsync(this, Discord, options);
+        /// <inheritdoc />
+        public Task ModifySuppressionAsync(bool suppressEmbeds, RequestOptions options = null)
+            => MessageHelper.SuppressEmbedsAsync(this, Discord, suppressEmbeds, options);
 
         public string Resolve(int startIndex, TagHandling userHandling = TagHandling.Name, TagHandling channelHandling = TagHandling.Name,
             TagHandling roleHandling = TagHandling.Name, TagHandling everyoneHandling = TagHandling.Ignore, TagHandling emojiHandling = TagHandling.Name)

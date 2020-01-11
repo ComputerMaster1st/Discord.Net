@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.IO;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
@@ -93,13 +94,13 @@ namespace Discord.Webhook
         /// <summary> Sends a message to the channel for this webhook with an attachment. </summary>
         /// <returns> Returns the ID of the created message. </returns>
         public Task<ulong> SendFileAsync(string filePath, string text, bool isTTS = false,
-            IEnumerable<Embed> embeds = null, string username = null, string avatarUrl = null, RequestOptions options = null)
-            => WebhookClientHelper.SendFileAsync(this, filePath, text, isTTS, embeds, username, avatarUrl, options);
+            IEnumerable<Embed> embeds = null, string username = null, string avatarUrl = null, RequestOptions options = null, bool isSpoiler = false)
+            => WebhookClientHelper.SendFileAsync(this, filePath, text, isTTS, embeds, username, avatarUrl, options, isSpoiler);
         /// <summary> Sends a message to the channel for this webhook with an attachment. </summary>
         /// <returns> Returns the ID of the created message. </returns>
         public Task<ulong> SendFileAsync(Stream stream, string filename, string text, bool isTTS = false,
-            IEnumerable<Embed> embeds = null, string username = null, string avatarUrl = null, RequestOptions options = null)
-            => WebhookClientHelper.SendFileAsync(this, stream, filename, text, isTTS, embeds, username, avatarUrl, options);
+            IEnumerable<Embed> embeds = null, string username = null, string avatarUrl = null, RequestOptions options = null, bool isSpoiler = false)
+            => WebhookClientHelper.SendFileAsync(this, stream, filename, text, isTTS, embeds, username, avatarUrl, options, isSpoiler);
 
         /// <summary> Modifies the properties of this webhook. </summary>
         public Task ModifyWebhookAsync(Action<WebhookProperties> func, RequestOptions options = null)
@@ -132,7 +133,7 @@ namespace Discord.Webhook
             {
                 // ensure that the first group is a ulong, set the _webhookId
                 // 0th group is always the entire match, so start at index 1
-                if (!(match.Groups[1].Success && ulong.TryParse(match.Groups[1].Value, out webhookId)))
+                if (!(match.Groups[1].Success && ulong.TryParse(match.Groups[1].Value, NumberStyles.None, CultureInfo.InvariantCulture, out webhookId)))
                     throw ex("The webhook Id could not be parsed.");
 
                 if (!match.Groups[2].Success)

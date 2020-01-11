@@ -13,6 +13,8 @@ namespace Discord.Rest
         /// <inheritdoc />
         public ulong WebhookId { get; }
         internal IGuild Guild { get; }
+        /// <inheritdoc />
+        public DateTimeOffset? PremiumSince { get; private set; }
 
         /// <inheritdoc />
         public override bool IsWebhook => true;
@@ -93,5 +95,7 @@ namespace Discord.Rest
         IVoiceChannel IVoiceState.VoiceChannel => null;
         /// <inheritdoc />
         string IVoiceState.VoiceSessionId => null;
+        /// <inheritdoc />
+        bool IVoiceState.IsStreaming => false;
     }
 }

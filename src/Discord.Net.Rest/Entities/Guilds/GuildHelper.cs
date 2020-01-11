@@ -32,8 +32,10 @@ namespace Discord.Rest
                 Icon = args.Icon.IsSpecified ? args.Icon.Value?.ToModel() : Optional.Create<ImageModel?>(),
                 Name = args.Name,
                 Splash = args.Splash.IsSpecified ? args.Splash.Value?.ToModel() : Optional.Create<ImageModel?>(),
+                Banner = args.Banner.IsSpecified ? args.Banner.Value?.ToModel() : Optional.Create<ImageModel?>(),
                 VerificationLevel = args.VerificationLevel,
-                ExplicitContentFilter = args.ExplicitContentFilter
+                ExplicitContentFilter = args.ExplicitContentFilter,
+                SystemChannelFlags = args.SystemChannelFlags
             };
 
             if (args.AfkChannel.IsSpecified)
@@ -56,6 +58,8 @@ namespace Discord.Rest
             else if (args.RegionId.IsSpecified)
                 apiArgs.RegionId = args.RegionId.Value;
 
+            if (!apiArgs.Banner.IsSpecified && guild.BannerId != null)
+                apiArgs.Banner = new ImageModel(guild.BannerId);
             if (!apiArgs.Splash.IsSpecified && guild.SplashId != null)
                 apiArgs.Splash = new ImageModel(guild.SplashId);
             if (!apiArgs.Icon.IsSpecified && guild.IconId != null)
@@ -63,6 +67,15 @@ namespace Discord.Rest
 
             if (args.ExplicitContentFilter.IsSpecified)
                 apiArgs.ExplicitContentFilter = args.ExplicitContentFilter.Value;
+
+            if (args.SystemChannelFlags.IsSpecified)
+                apiArgs.SystemChannelFlags = args.SystemChannelFlags.Value;
+
+            // PreferredLocale takes precedence over PreferredCulture
+            if (args.PreferredLocale.IsSpecified)
+                apiArgs.PreferredLocale = args.PreferredLocale.Value;
+            else if (args.PreferredCulture.IsSpecified)
+                apiArgs.PreferredLocale = args.PreferredCulture.Value.Name;
 
             return await client.ApiClient.ModifyGuildAsync(guild.Id, apiArgs, options).ConfigureAwait(false);
         }
@@ -247,7 +260,7 @@ namespace Discord.Rest
         //Roles
         /// <exception cref="ArgumentNullException"><paramref name="name"/> is <c>null</c>.</exception>
         public static async Task<RestRole> CreateRoleAsync(IGuild guild, BaseDiscordClient client,
-            string name, GuildPermissions? permissions, Color? color, bool isHoisted, RequestOptions options)
+            string name, GuildPermissions? permissions, Color? color, bool isHoisted, bool isMentionable, RequestOptions options)
         {
             if (name == null) throw new ArgumentNullException(paramName: nameof(name));
 
@@ -260,6 +273,7 @@ namespace Discord.Rest
                 x.Permissions = (permissions ?? role.Permissions);
                 x.Color = (color ?? Color.Default);
                 x.Hoist = isHoisted;
+                x.Mentionable = isMentionable;
             }, options).ConfigureAwait(false);
 
             return role;
@@ -294,6 +308,34 @@ namespace Discord.Rest
 
             return model is null ? null : RestGuildUser.Create(client, guild, model);
         }
+
+        public static async Task AddGuildUserAsync(ulong guildId, BaseDiscordClient client, ulong userId, string accessToken,
+            Action<AddGuildUserProperties> func, RequestOptions options)
+        {
+            var args = new AddGuildUserProperties();
+            func?.Invoke(args);
+
+            if (args.Roles.IsSpecified)
+            {
+                var ids = args.Roles.Value.Select(r => r.Id);
+
+                if (args.RoleIds.IsSpecified)
+                    args.RoleIds.Value.Concat(ids);
+                else
+                    args.RoleIds = Optional.Create(ids);
+            }
+            var apiArgs = new AddGuildMemberParams
+            {
+                AccessToken = accessToken,
+                Nickname = args.Nickname,
+                IsDeafened = args.Deaf,
+                IsMuted = args.Mute,
+                RoleIds = args.RoleIds.IsSpecified ? args.RoleIds.Value.Distinct().ToArray() : Optional.Create<ulong[]>()
+            };
+
+            await client.ApiClient.AddGuildMemberAsync(guildId, userId, apiArgs, options);
+        }
+
         public static async Task<RestGuildUser> GetUserAsync(IGuild guild, BaseDiscordClient client,
             ulong id, RequestOptions options)
         {
@@ -311,7 +353,7 @@ namespace Discord.Rest
             ulong? fromUserId, int? limit, RequestOptions options)
         {
             return new PagedAsyncEnumerable<RestGuildUser>(
-                DiscordConfig.MaxMessagesPerBatch,
+                DiscordConfig.MaxUsersPerBatch,
                 async (info, ct) =>
                 {
                     var args = new GetGuildMembersParams
@@ -325,7 +367,7 @@ namespace Discord.Rest
                 },
                 nextPage: (info, lastPage) =>
                 {
-                    if (lastPage.Count != DiscordConfig.MaxMessagesPerBatch)
+                    if (lastPage.Count != DiscordConfig.MaxUsersPerBatch)
                         return false;
                     info.Position = lastPage.Max(x => x.Id);
                     return true;
@@ -348,7 +390,7 @@ namespace Discord.Rest
 
         // Audit logs
         public static IAsyncEnumerable<IReadOnlyCollection<RestAuditLogEntry>> GetAuditLogsAsync(IGuild guild, BaseDiscordClient client,
-            ulong? from, int? limit, RequestOptions options)
+            ulong? from, int? limit, RequestOptions options, ulong? userId = null, ActionType? actionType = null)
         {
             return new PagedAsyncEnumerable<RestAuditLogEntry>(
                 DiscordConfig.MaxAuditLogEntriesPerBatch,
@@ -360,6 +402,10 @@ namespace Discord.Rest
                     };
                     if (info.Position != null)
                         args.BeforeEntryId = info.Position.Value;
+                    if (userId.HasValue)
+                        args.UserId = userId.Value;
+                    if (actionType.HasValue)
+                        args.ActionType = (int)actionType.Value;
                     var model = await client.ApiClient.GetAuditLogsAsync(guild.Id, args, options);
                     return model.Entries.Select((x) => RestAuditLogEntry.Create(client, model, x)).ToImmutableArray();
                 },

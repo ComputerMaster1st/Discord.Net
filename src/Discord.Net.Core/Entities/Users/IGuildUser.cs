@@ -48,6 +48,13 @@ namespace Discord
         /// </returns>
         ulong GuildId { get; }
         /// <summary>
+        ///     Gets the date and time for when this user's guild boost began.
+        /// </summary>
+        /// <returns>
+        ///     A <see cref="DateTimeOffset"/> for when the user began boosting this guild; <c>null</c> if they are not boosting the guild.
+        /// </returns>
+        DateTimeOffset? PremiumSince { get; }
+        /// <summary>
         ///     Gets a collection of IDs for the roles that this user currently possesses in the guild.
         /// </summary>
         /// <remarks>
@@ -66,7 +73,7 @@ namespace Discord
         /// </summary>
         /// <example>
         ///     The following example checks if the current user has the ability to send a message with attachment in
-        ///     this channel; if so, uploads a file via <see cref="IMessageChannel.SendFileAsync"/>.
+        ///     this channel; if so, uploads a file via <see cref="IMessageChannel.SendFileAsync(string, string, bool, Embed, RequestOptions, bool)"/>.
         ///     <code language="cs">
         ///     if (currentUser?.GetPermissions(targetChannel)?.AttachFiles)
         ///         await targetChannel.SendFileAsync("fortnite.png");

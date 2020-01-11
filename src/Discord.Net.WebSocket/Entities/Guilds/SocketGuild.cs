@@ -5,6 +5,7 @@ using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.Diagnostics;
+using System.Globalization;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -93,6 +94,23 @@ namespace Discord.WebSocket
         public string IconId { get; private set; }
         /// <inheritdoc />
         public string SplashId { get; private set; }
+        /// <inheritdoc />
+        public PremiumTier PremiumTier { get; private set; }
+        /// <inheritdoc />
+        public string BannerId { get; private set; }
+        /// <inheritdoc />
+        public string VanityURLCode { get; private set; }
+        /// <inheritdoc />
+        public SystemChannelMessageDeny SystemChannelFlags { get; private set; }
+        /// <inheritdoc />
+        public string Description { get; private set; }
+        /// <inheritdoc />
+        public int PremiumSubscriptionCount { get; private set; }
+        /// <inheritdoc />
+        public string PreferredLocale { get; private set; }
+
+        /// <inheritdoc />
+        public CultureInfo PreferredCulture { get; private set; }
 
         /// <inheritdoc />
         public DateTimeOffset CreatedAt => SnowflakeUtils.FromSnowflake(Id);
@@ -100,6 +118,8 @@ namespace Discord.WebSocket
         public string IconUrl => CDN.GetGuildIconUrl(Id, IconId);
         /// <inheritdoc />
         public string SplashUrl => CDN.GetGuildSplashUrl(Id, SplashId);
+        /// <inheritdoc />
+        public string BannerUrl => CDN.GetGuildBannerUrl(Id, BannerId);
         /// <summary> Indicates whether the client has all the members downloaded to the local guild cache. </summary>
         public bool HasAllMembers => MemberCount == DownloadedMemberCount;// _downloaderPromise.Task.IsCompleted;
         /// <summary> Indicates whether the guild cache is synced to this guild. </summary>
@@ -354,6 +374,14 @@ namespace Discord.WebSocket
             DefaultMessageNotifications = model.DefaultMessageNotifications;
             ExplicitContentFilter = model.ExplicitContentFilter;
             ApplicationId = model.ApplicationId;
+            PremiumTier = model.PremiumTier;
+            VanityURLCode = model.VanityURLCode;
+            BannerId = model.Banner;
+            SystemChannelFlags = model.SystemChannelFlags;
+            Description = model.Description;
+            PremiumSubscriptionCount = model.PremiumSubscriptionCount.GetValueOrDefault();
+            PreferredLocale = model.PreferredLocale;
+            PreferredCulture = new CultureInfo(PreferredLocale);
 
             if (model.Emojis != null)
             {
@@ -651,6 +679,10 @@ namespace Discord.WebSocket
             return null;
         }
 
+        /// <inheritdoc />
+        public Task<RestRole> CreateRoleAsync(string name, GuildPermissions? permissions = default(GuildPermissions?), Color? color = default(Color?),
+            bool isHoisted = false, RequestOptions options = null)
+            => GuildHelper.CreateRoleAsync(this, Discord, name, permissions, color, isHoisted, false, options);
         /// <summary>
         ///     Creates a new role with the provided name.
         /// </summary>
@@ -658,6 +690,7 @@ namespace Discord.WebSocket
         /// <param name="permissions">The guild permission that the role should possess.</param>
         /// <param name="color">The color of the role.</param>
         /// <param name="isHoisted">Whether the role is separated from others on the sidebar.</param>
+        /// <param name="isMentionable">Whether the role can be mentioned.</param>
         /// <param name="options">The options to be used when sending the request.</param>
         /// <exception cref="ArgumentNullException"><paramref name="name"/> is <c>null</c>.</exception>
         /// <returns>
@@ -665,8 +698,8 @@ namespace Discord.WebSocket
         ///     role.
         /// </returns>
         public Task<RestRole> CreateRoleAsync(string name, GuildPermissions? permissions = default(GuildPermissions?), Color? color = default(Color?),
-            bool isHoisted = false, RequestOptions options = null)
-            => GuildHelper.CreateRoleAsync(this, Discord, name, permissions, color, isHoisted, options);
+            bool isHoisted = false, bool isMentionable = false, RequestOptions options = null)
+            => GuildHelper.CreateRoleAsync(this, Discord, name, permissions, color, isHoisted, isMentionable, options);
         internal SocketRole AddRole(RoleModel model)
         {
             var role = SocketRole.Create(this, Discord.State, model);
@@ -729,10 +762,16 @@ namespace Discord.WebSocket
             else
             {
                 member = SocketGuildUser.Create(this, Discord.State, model);
+                if (member == null)
+                    throw new InvalidOperationException("SocketGuildUser.Create failed to produce a member"); // TODO 2.2rel: delete this
+                if (member.GlobalUser == null)
+                    throw new InvalidOperationException("Member was created without global user"); // TODO 2.2rel: delete this
                 member.GlobalUser.AddRef();
                 _members[member.Id] = member;
                 DownloadedMemberCount++;
             }
+            if (member == null)
+                throw new InvalidOperationException("AddOrUpdateUser failed to produce a user"); // TODO 2.2rel: delete this
             return member;
         }
         internal SocketGuildUser AddOrUpdateUser(PresenceModel model)
@@ -775,12 +814,15 @@ namespace Discord.WebSocket
         /// </summary>
         /// <param name="limit">The number of audit log entries to fetch.</param>
         /// <param name="options">The options to be used when sending the request.</param>
+        /// <param name="beforeId">The audit log entry ID to filter entries before.</param>
+        /// <param name="actionType">The type of actions to filter.</param>
+        /// <param name="userId">The user ID to filter entries for.</param>
         /// <returns>
         ///     A task that represents the asynchronous get operation. The task result contains a read-only collection
         ///     of the requested audit log entries.
         /// </returns>
-        public IAsyncEnumerable<IReadOnlyCollection<RestAuditLogEntry>> GetAuditLogsAsync(int limit, RequestOptions options = null)
-            => GuildHelper.GetAuditLogsAsync(this, Discord, null, limit, options);
+        public IAsyncEnumerable<IReadOnlyCollection<RestAuditLogEntry>> GetAuditLogsAsync(int limit, RequestOptions options = null, ulong? beforeId = null, ulong? userId = null, ActionType? actionType = null)
+            => GuildHelper.GetAuditLogsAsync(this, Discord, beforeId, limit, options, userId: userId, actionType: actionType);
 
         //Webhooks
         /// <summary>
@@ -1114,7 +1156,10 @@ namespace Discord.WebSocket
             => GetRole(id);
         /// <inheritdoc />
         async Task<IRole> IGuild.CreateRoleAsync(string name, GuildPermissions? permissions, Color? color, bool isHoisted, RequestOptions options)
-            => await CreateRoleAsync(name, permissions, color, isHoisted, options).ConfigureAwait(false);
+            => await CreateRoleAsync(name, permissions, color, isHoisted, false, options).ConfigureAwait(false);
+        /// <inheritdoc />
+        async Task<IRole> IGuild.CreateRoleAsync(string name, GuildPermissions? permissions, Color? color, bool isHoisted, bool isMentionable, RequestOptions options)
+            => await CreateRoleAsync(name, permissions, color, isHoisted, isMentionable, options).ConfigureAwait(false);
 
         /// <inheritdoc />
         Task<IReadOnlyCollection<IGuildUser>> IGuild.GetUsersAsync(CacheMode mode, RequestOptions options)
@@ -1134,10 +1179,11 @@ namespace Discord.WebSocket
             => Task.FromResult<IGuildUser>(Owner);
 
         /// <inheritdoc />
-        async Task<IReadOnlyCollection<IAuditLogEntry>> IGuild.GetAuditLogsAsync(int limit, CacheMode cacheMode, RequestOptions options)
+        async Task<IReadOnlyCollection<IAuditLogEntry>> IGuild.GetAuditLogsAsync(int limit, CacheMode cacheMode, RequestOptions options,
+            ulong? beforeId, ulong? userId, ActionType? actionType)
         {
             if (cacheMode == CacheMode.AllowDownload)
-                return (await GetAuditLogsAsync(limit, options).FlattenAsync().ConfigureAwait(false)).ToImmutableArray();
+                return (await GetAuditLogsAsync(limit, options, beforeId: beforeId, userId: userId, actionType: actionType).FlattenAsync().ConfigureAwait(false)).ToImmutableArray();
             else
                 return ImmutableArray.Create<IAuditLogEntry>();
         }

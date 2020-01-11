@@ -1,3 +1,5 @@
+using System.Globalization;
+
 namespace Discord
 {
     /// <summary>
@@ -36,6 +38,10 @@ namespace Discord
         /// </summary>
         public Optional<Image?> Icon { get; set; }
         /// <summary>
+        ///     Gets or sets the banner of the guild.
+        /// </summary>
+        public Optional<Image?> Banner { get; set; }
+        /// <summary>
         ///     Gets or sets the guild's splash image.
         /// </summary>
         /// <remarks>
@@ -70,5 +76,37 @@ namespace Discord
         ///     Gets or sets the explicit content filter level of this guild.
         /// </summary>
         public Optional<ExplicitContentFilterLevel> ExplicitContentFilter { get; set; }
+        /// <summary>
+        ///     Gets or sets the flags that DISABLE types of system channel messages.
+        /// </summary>
+        /// <remarks>
+        ///     These flags are inverted. Setting a flag will disable that system channel message from being sent.
+        ///     A value of <see cref="SystemChannelMessageDeny.None"/> will allow all system channel message types to be sent,
+        ///     given that the <see cref="SystemChannelId"/> has also been set.
+        ///     A value of <see cref="SystemChannelMessageDeny.GuildBoost"/> will deny guild boost messages from being sent, and allow all
+        ///     other types of messages.
+        ///     Refer to the extension methods <see cref="GuildExtensions.GetGuildBoostMessagesEnabled(IGuild)"/> and
+        ///     <see cref="GuildExtensions.GetWelcomeMessagesEnabled(IGuild)"/> to check if these system channel message types
+        ///     are enabled, without the need to manipulate the logic of the flag.
+        /// </remarks>
+        public Optional<SystemChannelMessageDeny> SystemChannelFlags { get; set; }
+        /// <summary>
+        ///     Gets or sets the preferred locale of the guild in IETF BCP 47 language tag format.
+        /// </summary>
+        /// <remarks>
+        ///     This property takes precedence over <see cref="PreferredCulture"/>.
+        ///     When it is set, the value of <see cref="PreferredCulture"/>
+        ///     will not be used.
+        /// </remarks>
+        public Optional<string> PreferredLocale { get; set; }
+        /// <summary>
+        ///     Gets or sets the preferred locale of the guild.
+        /// </summary>
+        /// <remarks>
+        ///     The <see cref="PreferredLocale"/> property takes precedence
+        ///     over this property. When <see cref="PreferredLocale"/> is set,
+        ///     the value of <see cref="PreferredCulture"/> will be unused.
+        /// </remarks>
+        public Optional<CultureInfo> PreferredCulture { get; set; }
     }
 }
